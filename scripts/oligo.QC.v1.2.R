@@ -402,54 +402,21 @@ detach("package:affycoretools", unload=TRUE)
 ##########################################################################
 # Non-specific filtering of data
 # let us explore how nonspecific filtering can improve our analysis. To this end, we calculate the overall variability across arrays of each probe set, regardless of the sample labels. For this, we use the function rowSds, which calculates the standard deviation for each row. A reasonable alternative would be to calculate the interquartile range (IQR).
-sds = rowSds(exprs(eset))
-sh = shorth(sds)
-sh
+#sds = rowSds(exprs(eset))
+#sh = shorth(sds)
+#sh
 
 #We can plot the histogram of the distribution of sds. The function shorth calculates the midpoint of the shorth (the shortest interval containing half of the data), and is in many cases a reasonable estimator of the ???peak??? of a distribution. Its value is drawn as a dashed vertical line in Figure.
+#pdf("qc_results/plots/Histogram_of_sds.pdf")
+#hist(sds, breaks=50, xlab="standard deviation")
+#abline(v=sh, col="blue", lwd=3, lty=2)
+#dev.off()
 
-pdf("qc_results/plots/Histogram_of_sds.pdf")
-hist(sds, breaks=50, xlab="standard deviation")
-abline(v=sh, col="blue", lwd=3, lty=2)
-dev.off()
-
-#There are a large number of probe sets with very low variability.We can safely assume that we will not be able to infer differential expression for their target genes. If there is differential expression between groups of samples, this will be reflected in higher overall variability. The benefit from eliminating probe sets with low overall variability at this stage of the analysis is that this ameliorates the multiple testing problem. By reducing the number of tests to be carried out, we increase the power to detect differential expression for the remaining, more variable, and hencemore informative probe sets. Hence, let us discard those probe sets whose standard deviation is below the value of sh.
-
-eset_filt_sds = eset[sds>=sh,]
-dim(exprs(eset))
-dim(exprs(eset_filt_sds))
-
-#alternative: IQR
-iqrCutoff <- 0.3  #choose depending on dataset
-Iqr <- apply(exprs(eset), 1, IQR)
-pdf("qc_results/plots/Histogram_of_IQR.pdf")
-hist(Iqr, breaks=50, xlab="standard deviation")
-abline(v=iqrCutoff, col="blue", lwd=3, lty=2)
-dev.off()
-selected <- Iqr > iqrCutoff
-eset_filt_iqr <- eset[selected,]
-dim(eset_filt_iqr)
-
-#A related approach would be to discard all probe sets with consistently low expression values. The idea is similar: those probe sets most likely match transcripts whose expression we cannot detect at all, and hence we need not test them for differential expression.
-#To summarize, nonspecific filtering of probe sets aims to reduce the number of statistical tests performed, and hence to increase the power to detect differential expression in view of multiple testing adjustments (von Heydebreck et al., 2004).
-
-#compare both sds and IQR and choose reasonably.
-dim(exprs(eset_filt_sds))  #
-dim(eset_filt_iqr)  #
-dim(exprs(eset)) #
-
-#write to file for customer to plot e.g. in excel:
+#write to file and save esets
 write.exprs(eset, "qc_results/tables/RMAnorm_nonfiltered.txt")
-write.exprs(eset_filt_sds, "qc_results/tables/RMAnorm_sds.filtered.txt")
-#write.exprs(eset_filt_iqr, "out/RMAnorm_iqr.filtered.txt")
-
-
-#save esets
-save(list=c("pd","eset", "eset_filt_sds"), file="qc_results/final/eset.Rdata")
-
-#save image
+#write.exprs(eset_filt_sds, "qc_results/tables/RMAnorm_sds.filtered.txt")
+save(list=c("pd","eset"), file="qc_results/final/eset.Rdata")
 setwd(path)
-
 
 
 #end of script
