@@ -1,9 +1,9 @@
-######################################
-## Quality control analysis report of Microarray Data 
+#' ---
+#' title: "Quality control analysis report of Microarray Data "
+#' author: "author x"
+#' ---
 
-
-######################################
-#load packages needed for oligo run
+#'load packages needed for oligo run
 library("siggenes")
 library("RColorBrewer")
 library("multtest")
@@ -16,29 +16,31 @@ library("dendextend")
 library("statmod")
 library("annotate")
 
+#+ clean up,echo=F
+library(knitr)
+knitr::opts_chunk$set(fig.width=10, fig.height=10, fig.path='qc_results/plots/',
+                      echo=T, warning=FALSE, message=FALSE)
 
-######################################
-#clean up
-rm(list = ls(all = TRUE)) # clear all variables
+
+
+
+#+ clean_up,echo=F
+rm(list = ls(all = TRUE)) #' clear all variables
 graphics.off()
 path <- getwd()
-path
 
 
-######################################
-# create directories needed
+#' create directories needed
 dir.create("qc_results")
 dir.create("qc_results/raw_data")
 dir.create("qc_results/plots")
 dir.create("qc_results/tables")
 dir.create("qc_results/metadata")
 dir.create("qc_results/final")
-######################################
 
 
-######################################
-#check raw data
-#put raw data (.cel files) raw data/
+#' prepare raw and metadata files...
+#+ prepare_files, echo=F
 files = list.files(path,recursive = T, pattern = ".CEL")
 for (i in files)
 {
@@ -48,9 +50,6 @@ for (i in files)
 
 setwd(path)
 
-
-######################################
-#metadata table
 m <- list.files(path, recursive = T, pattern = "sample_preparation")
 for (i in m)
 {
@@ -60,12 +59,12 @@ for (i in m)
 
 m <- list.files("qc_results/metadata/")
 m <- read.table(m,  header = T,sep = "\t",na.strings =c("","NaN"),quote=NULL,stringsAsFactors=F,dec=".",fill=TRUE)
-# create a new column `x` with all the columns collapsed together
+### create a new column `x` with all the columns collapsed together
 cols <- names(m)
 m$x <- apply(m[ ,cols],1,paste, collapse = "-")
 m$x <- gsub(" ","",m$x)
 
-#use filename to create a vector of regexes
+###use filename to create a vector of regexes
 files <- list.files("qc_results/raw_data/",recursive = T, pattern = ".CEL")
 files <- gsub(".CEL","",files)
 
@@ -79,186 +78,162 @@ m$filenames <- m$xx
 m$xx <- NULL
 m$x <- NULL
 
+#' then write newly created metadata table
 write.table(m, "qc_results/metadata/metadata.txt",append = FALSE, quote = FALSE, sep = "\t",eol = "\n", na = "NA", dec = ".", row.names = F,  col.names = T, qmethod = c("escape", "double"))
 
 setwd(path)
 
 
-######################################
-#Metadata preparation
+#'Load metadata as AnnotatedDataFrame and load cel files
 pd = read.AnnotatedDataFrame("qc_results/metadata/metadata.txt", header = TRUE)
-pd
 row.names(pd) = pd[["filenames"]]
+#'check filenames
 row.names(pd)
 
-
-######################################
-#load raw data with that additonal piece of information
+#+ check,echo=F
 setwd(path)
+
+#' location of raw data cel files
 celFiles <- list.celfiles("qc_results/raw_data",full.names=T)
+#' then load them:
 data <- read.celfiles(celFiles,phenoData = pd,verbose = T)  
-#changed to filenames, more secure then sampleNames
 
-
-
-######################################
-#a check:
+#'a simple check:
 identical(sampleNames(data),row.names(pd))
 
 
-#fit Probe Level Models (PLMs) with probe- level and sample-level parameters.
-#The resulting object is an oligoPLM object, which stores parameter estimates, residuals and weights.
-Pset <- fitProbeLevelModel(data)
+#' next fit Probe Level Models (PLMs) with probe- level and sample-level parameters.
+#' The resulting object is an oligoPLM object, which stores parameter estimates, residuals and weights.
+#' Pset <- fitProbeLevelModel(data)
 
-
-##################
-#Diagnostic plots and analysis
-##################
-####set-up color code####
+#'Prepare color and groups for plots
 grps <- as.character(pData(data)$treatment)
 grps <- as.factor(grps)
-grps
-display.brewer.all()
 col = brewer.pal(length(levels(grps)),"Set1")
 col = c(c(col)[grps])
+#'now display groups and associated colours
+grps
 col
 
 
-#1)Correlation analysis between the samples and their repeated measurements
+#' Basic quality analysis
+#' 1) Correlation analysis between the samples and their repeated measurements
 cor <- cor(exprs(data), use = "everything",method = c("pearson"))
 write.table(cor, "qc_results/tables/pearson_correlation_all_data.tsv", append = FALSE, quote = FALSE, sep = "\t",eol = "\n", na = "NA", dec = ".", row.names = T,  col.names = NA, qmethod = c("escape", "double"))
-#use that for matrix eventually such as in the DESeq2 package for RNA-Seq experiments
 
 
-#2)boxplot of raw log intensities
+#' 2) Boxplot of raw log intensities
 pdf("qc_results/plots/Boxplot_raw_intensities.pdf")
 par(oma=c(12,3,3,3))
 par(mfrow = c(1,2))
 boxplot(data, which='all', col=col,xlab="", main="", ylab="log2 signal intensity (PM+bg)", cex.axis=0.5, las=2)
 legend("topright",col=levels(factor(col)),lwd=1,cex=0.5, legend=levels(grps))
 boxplot(data, which='pm', col=col,xlab="", main="", ylab="log2 signal intensity (PM only)", cex.axis=0.5, las=2)
-#boxplot(data, which='mm', col=col, xlab="", main="", ylab="log2 signal intensity (MM only)", cex.axis=0.5, las=2)
 legend("topright",col=levels(factor(col)),lwd=1,cex=0.5, legend=levels(grps))
-mtext("Visualization of raw data using Boxplots of log2 transformed intensity values. The Legend depicts colouring based on sample groups.\nPM=Perfect Match, bg=background", outer = T,side=1,cex=0.5,adj = 0)
 dev.off()
 
 
-#3)RLE and NUSE plots on dataset
-#RLE:relative log expression
-#NUSE:normalized unscaled standard error 
-#In the NUSE plot, low-quality arrays are those that are significantly elevated or more spread out, relative to the other arrays. NUSE values are useful for comparing arrays within one dataset, but their magnitudes are not comparable across different datasets.
-#In the RLE plot (Figure 3.3, bottom), problematic arrays are indicated by larger spread, by a center location different from y = 0, or both.
-
-pdf("qc_results/plots/NUSE_plot.pdf")
-par(oma=c(12,3,3,3)) 
-NUSE(Pset, main="NUSE",ylim=c(0.5,2),outline=FALSE,col=col,las=2,cex.axis=0.5,ylab="Normalized Unscaled Error (NUSE) values",whisklty="dashed",staplelty=1,cex.axis=0.75)
-dev.off()
-pdf("qc_results/plots/RLE_plot.pdf")
-par(oma=c(12,3,3,3)) 
-RLE(Pset, main="RLE", ylim = c(-8, 8), outline = FALSE, col=col,las=2, cex.axis=0.5,ylab="Relative Log Expression (RLE) values",whisklty="dashed", staplelty=1,cex.axis=0.75)
-dev.off()
+#' 3) Pseudo chip images
+length = length(sampleNames(data))
+length
 
 
-#4)Histogram to compare log2 intensities vs density between arrays
-#density plots of log base 2 intensities (log2(PMij) for array i and probe j) of perfect match probes for comparison of probe intensity behavior between different arrays. If you see differences in shape or center of the distributions, it means that normalization is required.
+##
+for (chip in 1:length){
+   png(paste("qc_results/plots/pseudo_image.", sampleNames(data)[chip], ".png", sep = ""))
+   image(data[,chip])
+   dev.off()
+ }
+
+##
+# 4) RLE and NUSE plots 
+ pdf("qc_results/plots/NUSE_plot.pdf")
+ par(oma=c(12,3,3,3))
+ NUSE(Pset, main="NUSE",ylim=c(0.5,2),outline=FALSE,col=col,las=2,cex.axis=0.5,ylab="Normalized Unscaled Error (NUSE) values",whisklty="dashed",staplelty=1,cex.axis=0.75)
+ dev.off()
+ pdf("qc_results/plots/RLE_plot.pdf")
+ par(oma=c(12,3,3,3))
+ RLE(Pset, main="RLE", ylim = c(-8, 8), outline = FALSE, col=col,las=2, cex.axis=0.5,ylab="Relative Log Expression (RLE) values",whisklty="dashed", staplelty=1,cex.axis=0.75)
+ dev.off()
+##
+
+
+#' 5) Histogram to compare log2 intensities vs density between arrays
 pdf("qc_results/plots/Histogramm_log2_intensities_vs_density.pdf")
 hist(data,col = col, lty = 1, xlab="log2 intensity", ylab="density", xlim = c(2, 12), type="l")
 legend("topright",col = col, lwd=1, legend=sampleNames(data),cex=0.5)
 dev.off()
 
 
-#5)MA plots raw data
-#The MAplot also allows summarization, so groups can be compared more easily:
-
+#' 6) MA plots raw data
 pdf("qc_results/plots/MA_plot_before_normalization_groups.pdf")
 MAplot(data, pairs=TRUE, groups=grps,na.rm=TRUE)
 dev.off()
 
 
-#6)PCA plot before normalization
-#You want to see which genes that mean the most for the differences between the samples, and therefore your samples should be in the rows and your genes should be in the columns.
-#there t():
+#'7) PCA plot before normalization
 pca_before <- prcomp(t(exprs(data)), scores=TRUE, scale. = TRUE, cor=TRUE)
 summary(pca_before)
-# sqrt of eigenvalues
+#' sqrt of eigenvalues
 pca_before$sdev
-#loadings
+#'loadings
 head(pca_before$rotation)
-#PCs (aka scores)
+#'PCs (aka scores)
 head(pca_before$x)
 
-# create data frame with scores
+#' create data frame with scores
 scores_before = as.data.frame(pca_before$x)
-# plot of observations
+#' plot of observations
 
-#reorder grps just for pca plot
+#'reorder grps just for pca plot
 grps_pca <- grps
 
 pdf("qc_results/plots/PCA_before_normalization.pdf")
 ggplot(data = scores_before, aes(x = PC1, y = PC2,colour=grps_pca)) +
   geom_hline(yintercept = 0, colour = "gray65") +
   geom_vline(xintercept = 0, colour = "gray65") +
-  #geom_text(colour = "black",label=sampleNames(data), size = 2,angle=40) +
-  #scale_fill_manual(values=c("#E41A1C", "#377EB8", "#4DAF4A"), breaks=c("Parabel", "Simbox", "Texus"), labels=c("Parabel", "Simbox", "Texus")) +
+  #'geom_text(colour = "black",label=sampleNames(data), size = 2,angle=40) +
+  #'scale_fill_manual(values=c("#'E41A1C", "#'377EB8", "#'4DAF4A"), breaks=c("Parabel", "Simbox", "Texus"), labels=c("Parabel", "Simbox", "Texus")) +
   geom_point(aes(shape = factor(data$treatment)),size=2) + 
-  #scale_colour_manual(values = c("#E41A1C","#377EB8", "#4DAF4A"))
-  #scale_shape_manual(values=1:nlevels(col)) +
-  theme(legend.title=element_blank()) +  ## turn off legend title
+  #'scale_colour_manual(values = c("#'E41A1C","#'377EB8", "#'4DAF4A"))
+  #'scale_shape_manual(values=1:nlevels(col)) +
+  theme(legend.title=element_blank()) +  #'#' turn off legend title
   ggtitle("PCA plot before normalization")
 dev.off()
 
-##--end QC before normalization
+
 setwd(path)
 
 
 
-##################
-#Data Normalization
-##################
-#as default do rma here....
-eset <- rma(data)  #depending on chip such as ST chips, default used is target="core"
-#it does
-#Background correcting
-#Normalizing
-#Calculating Expression
-
-#Currently the rma function implements RMA in the following manner
-#1. Probe specific correction of the PM probes using a model based on observed intensity being the sum of signal and noise
-#2. Normalization of corrected PM probes using quantile normalization (Bolstad et al., 2003)
-#3. Calculation of Expression measure using median polish.
+#' Data Normalization
+eset <- rma(data)
 
 
-##########################
-#Quality plots
-#########################
-
-#1)boxplot after normalization
+#'Quality plots after normalization
+#'1) Boxplot after normalization
 pdf("qc_results/plots/Boxplot_after_normalization.pdf")
 par(oma=c(10,2,2,2))
 boxplot(exprs(eset), col=col,which='both', xlab="", main="", ylab="log2 signal intensity", cex.axis=0.4, las=2)
 dev.off()
 
-#2)Scatter matrix of arrays against one another
-png("out/Scatter_plot_after_normalization.png")
-scatter <- pairs(exprs(eset), pch=".",main="Scatter plots", cex=0.5)
-dev.off()
 
-
-#3)The MAplot also allows summarization, so groups can be compared more easily:
+#' 2) The MAplot also allows summarization, so groups can be compared more easily:
 pdf("qc_results/plots/MA_plot_after_normalization_groups.pdf")
 MAplot(exprs(eset), pairs=TRUE, groups=grps)
 dev.off()
 
 
-#4)clustering
-#for arrays, problem: arrays are not row names but at column position, thus transpose is needed
-d <- dist(t(exprs(eset))) # find distance matrix
-hc <- hclust(d)               # apply hierarchical clustering
-##
+#' 3) Clustering
+#'for arrays, problem: arrays are not row names but at column position, thus transpose is needed
+d <- dist(t(exprs(eset))) #' find distance matrix
+d
+hc <- hclust(d)               #' apply hierarchical clustering
+
 dend <- as.dendrogram(hc)
-#remember groups, assign a new color code
+#'remember groups, assign a new color code
 labels_colors(dend) <- col[order.dendrogram(dend)]
-#colorCodes = c("red", "blue", "green")
+#'colorCodes = c("red", "blue", "green")
 pdf("qc_results/plots/Cluster_Dendogram.pdf")
 par(oma=c(10,2,2,2))
 dend %>% set("labels_cex",0.5) %>% plot()
@@ -266,68 +241,78 @@ legend("topright",col=levels(factor(col)),lwd=1,cex=0.5, legend=levels(grps))
 dev.off()
 
 
-#5)PCA after normalization
+#' 4) PCA after normalization
 pca <- prcomp(t(exprs(eset)), scores=TRUE, cor=TRUE)
+
 summary(pca)
-# sqrt of eigenvalues
+#' sqrt of eigenvalues
 pca$sdev
-#loadings
+#'loadings
 head(pca$rotation)
-#PCs (aka scores)
+#'PCs (aka scores)
 head(pca$x)
 
-# create data frame with scores
+#' create data frame with scores
 scores_after = as.data.frame(pca$x)
-# plot of observations
+#' plot of observations
 pdf("qc_results/plots/PCA_after_normalization.pdf")
 ggplot(data = scores_after, aes(x = PC1, y = PC2,colour=grps_pca)) +
   geom_hline(yintercept = 0, colour = "gray65") +
   geom_vline(xintercept = 0, colour = "gray65") +
-  #geom_text(colour = "black",label=sampleNames(data), size = 2,angle=40) +
-  #scale_fill_manual(values=c("#E41A1C", "#377EB8", "#4DAF4A"), breaks=c("Parabel", "Simbox", "Texus"), labels=c("Parabel", "Simbox", "Texus")) +
+  #'geom_text(colour = "black",label=sampleNames(data), size = 2,angle=40) +
+  #'scale_fill_manual(values=c("#'E41A1C", "#'377EB8", "#'4DAF4A"), breaks=c("Parabel", "Simbox", "Texus"), labels=c("Parabel", "Simbox", "Texus")) +
   geom_point(aes(shape = factor(data$treatment)),size=2) + 
-  #scale_colour_manual(values = c("#E41A1C","#377EB8", "#4DAF4A"))
-  #scale_shape_manual(values=1:nlevels(col)) +
-  theme(legend.title=element_blank()) +  ## turn off legend title
+  #'scale_colour_manual(values = c("#'E41A1C","#'377EB8", "#'4DAF4A"))
+  #'scale_shape_manual(values=1:nlevels(col)) +
+  theme(legend.title=element_blank()) +  #'#' turn off legend title
   ggtitle("PCA plot after normalization")
 dev.off()
 
 
 
-#6)shows scree plot to verify plotting of PC1 vs PC2
+#' 5) Scree plot to verify plotting of PC1 vs PC2
 library("affycoretools")
 pdf("qc_results/plots/PCs.pdf")
 plotPCA(exprs(eset),main="Principal component analysis (PCA)", screeplot=TRUE, outside=TRUE)
 dev.off()
 
-#unload affy related packages again as analysis is focused on using oligo package function:
+#'unload affy related packages again as analysis is focused on using oligo package function:
 detach("package:affycoretools", unload=TRUE)
-#detach("package:affy", unload=TRUE)
+#'detach("package:affy", unload=TRUE)
 
 
-##---end QC after normalization
+#' 6) Non-specific filtering of data,could also be done with e.g. IQR
+#sds = rowSds(exprs(eset))
+#sh = shorth(sds)
+
+#pdf("qc_results/plots/Histogram_of_sds.pdf")
+#hist(sds, breaks=50, xlab="standard deviation")
+#abline(v=sh, col="blue", lwd=3, lty=2)
+#dev.off()
+#eset_filt_sds = eset[sds>=sh,]
+#' check dimensions of datasets before and after filtering
+#dim(exprs(eset))
+#dim(exprs(eset_filt_sds))
 
 
-
-#write to file and save esets
+#' write to file for customer to plot e.g. in excel:
 write.exprs(eset, "qc_results/tables/RMAnorm_nonfiltered.txt")
 #write.exprs(eset_filt_sds, "qc_results/tables/RMAnorm_sds.filtered.txt")
+
+
+#'save esets
 save(list=c("pd","eset"), file="qc_results/final/eset.Rdata")
+
+#'save image
 setwd(path)
 
 
-#end of script
-####-------------save Sessioninfo
+
+#' end of script
+#' save Sessioninfo
 fn <- paste("qc_results/tables/sessionInfo_",format(Sys.Date(), "%d_%m_%Y"),".txt",sep="")
 sink(fn)
 sessionInfo()
 sink()
-####---------END----save Sessioninfo 
-
-
-
-
-
-
 
 
